@@ -53,6 +53,10 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 ## 5. Инициализация БД
 
+Схема создаётся и актуализируется автоматически при старте приложения
+(в том числе под gunicorn). Шаг необязателен — команда ниже нужна только для
+ручной проверки:
+
 ```bash
 cd /opt/schet
 .venv/bin/python -c "from app import init_db; init_db()"
@@ -114,6 +118,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 sudo systemctl restart schet
 ```
+
+Недостающие колонки БД добавляются автоматически при рестарте (аддитивная
+миграция, данные не удаляются и не изменяются).
 
 ## Примечания
 

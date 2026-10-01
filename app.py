@@ -8,6 +8,7 @@ import io
 import os
 import re
 import secrets
+import sys
 import time
 import unicodedata
 from datetime import datetime, timezone
@@ -23,6 +24,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
+
+from sqlalchemy import inspect, text
 
 from config import config
 from models import db, Invoice, Contragent
@@ -263,7 +266,11 @@ def is_online(user):
     """Пользователь считается онлайн, если активен в последние 5 минут."""
     if user is None or user.last_seen is None:
         return False
-    delta = (datetime.now(timezone.utc) - user.last_seen).total_seconds()
+    last_seen = user.last_seen
+    # SQLite хранит даты без таймзоны — нормализуем перед сравнением.
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    delta = (datetime.now(timezone.utc) - last_seen).total_seconds()
     return delta < 5 * 60
 
 
@@ -856,14 +863,71 @@ def export():
 
 
 # ---------------------------------------------------------------------------
-# Инициализация БД
+# Инициализация/миграция БД
 # ---------------------------------------------------------------------------
+def _sqlite_default_literal(value):
+    """Литерал SQL для DEFAULT (строки/числа/булевы)."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _add_missing_columns():
+    """
+    Аддитивная миграция: добавляет в существующие таблицы колонки, которые
+    появились в моделях, но отсутствуют в БД. Не удаляет и не меняет данные.
+    """
+    insp = inspect(db.engine)
+    for model in (Contragent, Invoice):
+        table = model.__tablename__
+        if not insp.has_table(table):
+            continue  # таблицу создаст db.create_all()
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for col in model.__table__.columns:
+            if col.name in existing:
+                continue
+            ddl = f'ALTER TABLE "{table}" ADD COLUMN "{col.name}" {col.type.compile(db.engine.dialect)}'
+
+            default = None
+            if col.default is not None and not col.default.is_callable and not col.default.is_scalar:
+                default = None
+            elif col.default is not None and col.default.is_scalar:
+                default = col.default.arg
+
+            if default is not None:
+                ddl += f" DEFAULT {_sqlite_default_literal(default)}"
+            elif not col.nullable:
+                # SQLite запрещает ADD COLUMN NOT NULL без DEFAULT — добавляем как NULLable.
+                print(
+                    f"ВНИМАНИЕ: колонка {table}.{col.name} добавлена как NULLable "
+                    "(NOT NULL без DEFAULT не поддерживается SQLite при ALTER TABLE)",
+                    file=sys.stderr,
+                )
+            with db.engine.begin() as conn:
+                try:
+                    conn.execute(text(ddl))
+                except Exception as e:
+                    # Параллельный воркер уже добавил колонку — это не ошибка.
+                    if "duplicate column" in str(e).lower():
+                        continue
+                    raise
+            print(f"Схема обновлена: добавлена колонка {table}.{col.name}", file=sys.stderr)
+
+
 def init_db():
+    """Создать/актуализировать схему БД. Идемпотентно, безопасно при повторных запусках."""
     with app.app_context():
         db.create_all()
+        _add_missing_columns()
+
+
+# Актуализируем схему при импорте: gunicorn (см. schet.service) не вызывает init_db(),
+# поэтому миграция должна отработать при загрузке модуля app.
+init_db()
 
 
 if __name__ == "__main__":
-    init_db()
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     app.run(host="127.0.0.1", port=5000, debug=debug)
