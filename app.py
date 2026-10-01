@@ -373,7 +373,13 @@ def contragent_login():
 
 @app.route("/logout")
 def contragent_logout():
+    # Сбрасываем last_seen, чтобы контрагент сразу считался офлайн в админке.
+    user = current_contragent()
+    if user is not None:
+        user.last_seen = None
+        db.session.commit()
     session.pop("contragent_id", None)
+    session.pop("_last_seen_update", None)
     flash("Вы вышли из личного кабинета.", "ok")
     return redirect(url_for("index"))
 
