@@ -28,8 +28,8 @@ class Config:
     # Максимальный размер загружаемого файла, байт (по умолчанию 15 МБ)
     MAX_UPLOAD_SIZE: int = int(os.getenv("MAX_UPLOAD_SIZE", str(15 * 1024 * 1024)))
 
-    # Разрешённые расширения вложений
-    ALLOWED_EXTENSIONS: tuple = ("pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx")
+    # Разрешённые расширения вложений (только PDF)
+    ALLOWED_EXTENSIONS: tuple = ("pdf",)
 
     # Папки для загрузок и экспорта
     UPLOAD_FOLDER: str = os.path.join(os.path.dirname(__file__), "uploads")

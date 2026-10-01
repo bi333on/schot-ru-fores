@@ -416,7 +416,7 @@ def cabinet_add():
         saved_name = ""
         if file and file.filename:
             if not allowed_file(file.filename):
-                errors.append("Недопустимый формат файла (разрешены PDF, JPG, PNG, DOC, XLSX).")
+                errors.append("Недопустимый формат файла (разрешён только PDF).")
             else:
                 original_name = norm(file.filename)[:512]
                 ext = original_name.rsplit(".", 1)[1].lower()
