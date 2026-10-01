@@ -1,13 +1,22 @@
 scheta.netfree.pro {
-    encode gzip
+    encode zstd gzip
 
     # лимит размера загружаемого файла (15 МБ)
     request_body {
         max_size 15MB
     }
 
-    # прокси на Gunicorn
-    reverse_proxy 127.0.0.1:5000
+    # статика: кэш на 1 час, без прокси в приложение
+    handle /static/* {
+        root * /opt/schet
+        file_server
+        header Cache-Control "public, max-age=3600"
+    }
+
+    # всё остальное — на Gunicorn
+    handle {
+        reverse_proxy 127.0.0.1:5000
+    }
 
     # логи
     log {
