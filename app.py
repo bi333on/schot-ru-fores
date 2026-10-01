@@ -755,16 +755,17 @@ def admin_user_delete(id):
     user = db.session.get(Contragent, id)
     if user is None:
         abort(404)
-    if user.invoices.count() > 0:
-        flash(
-            f"Нельзя удалить: у пользователя {user.email} есть счета. "
-            "Сначала заблокируйте доступ.",
-            "error",
-        )
-        return redirect(url_for("admin_users"))
+    # удаляем все счета пользователя вместе с файлами
+    invoices = user.invoices.all()
+    for inv in invoices:
+        if inv.файл:
+            fp = os.path.join(app.config["UPLOAD_FOLDER"], inv.файл)
+            if os.path.exists(fp):
+                os.remove(fp)
+        db.session.delete(inv)
     db.session.delete(user)
     db.session.commit()
-    flash(f"Пользователь {user.email} удалён.", "ok")
+    flash(f"Пользователь {user.email} и его счета удалены.", "ok")
     return redirect(url_for("admin_users"))
 
 

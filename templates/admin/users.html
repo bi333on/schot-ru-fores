@@ -96,7 +96,7 @@
             <button type="submit" class="btn btn-small">Сменить пароль</button>
           </form>
           <form method="post" action="{{ url_for('admin_user_delete', id=u.id) }}"
-                class="js-confirm" data-confirm="Удалить {{ u.email }}?">
+                class="js-confirm" data-confirm="Удалить {{ u.email }} и все его счета ({{ u.invoices.count() }})? Это действие необратимо.">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-small btn-danger">Удалить</button>
           </form>
