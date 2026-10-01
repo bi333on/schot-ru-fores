@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Приём счетов — {{ site_name }}{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('contragent_login') }}">Вход</a>
+  <a href="{{ url_for('contragent_register') }}" class="nav-btn">Регистрация</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <h1>Приём счетов</h1>
+  <p>Личный кабинет контрагента для загрузки счетов и отслеживания их статуса оплаты.</p>
+</section>
+
+<div class="card welcome-card">
+  <h2>Как это работает</h2>
+  <ol class="steps">
+    <li>Зарегистрируйтесь — укажите email, пароль и название организации.</li>
+    <li>Загрузите счёт — заполните данные и приложите PDF/скан.</li>
+    <li>Отслеживайте статус — в кабинете видно, когда счёт будет оплачен.</li>
+  </ol>
+
+  <div class="welcome-actions">
+    <a class="btn btn-primary" href="{{ url_for('contragent_register') }}">Зарегистрироваться</a>
+    <a class="btn" href="{{ url_for('contragent_login') }}">Войти в кабинет</a>
+  </div>
+</div>
+{% endblock %}

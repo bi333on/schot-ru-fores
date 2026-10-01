@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Админ-панель — {{ site_name }}{% endblock %}
+
+{% block brand %}{{ site_name }} · Админ{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('index') }}">Форма приёма</a>
+  <a href="{{ url_for('export') }}">Экспорт XLSX</a>
+  <a href="{{ url_for('logout') }}">Выйти</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>Счета</h1>
+
+<form method="get" class="filters">
+  <input type="search" name="q" placeholder="Поиск: № счёта, контрагент, товар, примечание…" value="{{ q }}">
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for value, title in statuses %}
+    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ title }}</option>
+    {% endfor %}
+  </select>
+  <select name="sort">
+    <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Сначала новые</option>
+    <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>По дате счёта ↓</option>
+    <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>По дате счёта ↑</option>
+    <option value="amount_desc" {% if sort == 'amount_desc' %}selected{% endif %}>По сумме ↓</option>
+    <option value="amount_asc" {% if sort == 'amount_asc' %}selected{% endif %}>По сумме ↑</option>
+    <option value="contragent" {% if sort == 'contragent' %}selected{% endif %}>По контрагенту</option>
+  </select>
+  <button type="submit" class="btn">Найти</button>
+  {% if q or status or sort != 'newest' %}<a class="btn btn-ghost" href="{{ url_for('admin') }}">Сбросить</a>{% endif %}
+</form>
+
+<div class="stats">
+  <div class="stat"><span class="stat-label">Всего</span><span class="stat-value">{{ total | money }} ₽</span></div>
+  <div class="stat"><span class="stat-label">Оплачено</span><span class="stat-value">{{ paid | money }} ₽</span></div>
+  <div class="stat"><span class="stat-label">Не учитывать</span><span class="stat-value">{{ excluded | money }} ₽</span></div>
+  <div class="stat stat-accent"><span class="stat-label">К оплате</span><span class="stat-value">{{ payable | money }} ₽</span></div>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="nowrap">#</th>
+        <th class="nowrap">№ счёта</th>
+        <th class="nowrap">Дата</th>
+        <th class="nowrap">Контрагент</th>
+        <th class="col-goods">Товар/услуга</th>
+        <th class="num nowrap">Сумма</th>
+        <th class="nowrap">Назначение</th>
+        <th class="nowrap">Файл</th>
+        <th class="nowrap">Статус</th>
+        <th class="nowrap"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr>
+        <td class="nowrap">{{ inv.id }}</td>
+        <td class="nowrap cell-num-invoice">{{ inv.номер_счета or "—" }}</td>
+        <td class="nowrap">{{ dates_cell(inv) }}</td>
+        <td class="nowrap">{{ inv.контрагент or "—" }}</td>
+        <td class="col-goods">{{ (inv.товар_услуга or "—") | items_list }}</td>
+        <td class="num nowrap">{{ inv.сумма | money }}</td>
+        <td class="nowrap">{{ inv.назначение or "—" }}</td>
+        <td>
+          {% if inv.файл %}
+          <a href="{{ url_for('invoice_file', id=inv.id) }}">скачать</a>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('invoice_status', id=inv.id) }}" class="status-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="status" onchange="this.form.submit()">
+              {% for value, title in statuses %}
+              <option value="{{ value }}" {% if inv.статус == value %}selected{% endif %}>{{ title }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </td>
+        <td class="actions">
+          <a class="btn btn-small" href="{{ url_for('invoice_detail', id=inv.id) }}">Открыть</a>
+          <form method="post" action="{{ url_for('invoice_delete', id=inv.id) }}"
+                onsubmit="return confirm('Удалить счёт #{{ inv.id }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-small btn-danger">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" class="empty">Счетов пока нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% from "_pagination.html" import render %}
+{{ render(pagination, 'admin', q=q, status=status, sort=sort) }}
+{% endblock %}

@@ -1,0 +1,28 @@
+{% macro render(pagination, endpoint, q='', status='', sort='', contragent='') %}
+{% if pagination and pagination.pages > 1 %}
+<nav class="pagination" aria-label="Пагинация">
+  <span class="pagination-info">Страница {{ pagination.page }} из {{ pagination.pages }} · всего {{ pagination.total }}</span>
+  <div class="pagination-controls">
+    {% if pagination.has_prev %}
+    <a class="btn btn-small" href="{{ url_for(endpoint, page=pagination.prev_num, q=q, status=status, sort=sort, contragent=contragent) }}">← Назад</a>
+    {% endif %}
+
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+        {% if p == pagination.page %}
+        <span class="page-current">{{ p }}</span>
+        {% else %}
+        <a class="page-link" href="{{ url_for(endpoint, page=p, q=q, status=status, sort=sort, contragent=contragent) }}">{{ p }}</a>
+        {% endif %}
+      {% else %}
+        <span class="page-dots">…</span>
+      {% endif %}
+    {% endfor %}
+
+    {% if pagination.has_next %}
+    <a class="btn btn-small" href="{{ url_for(endpoint, page=pagination.next_num, q=q, status=status, sort=sort, contragent=contragent) }}">Вперёд →</a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}
+{% endmacro %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Счёт #{{ invoice.id }} — {{ site_name }}{% endblock %}
+
+{% block brand %}{{ site_name }} · Админ{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('admin') }}">← К списку</a>
+  <a href="{{ url_for('export') }}">Экспорт XLSX</a>
+  <a href="{{ url_for('logout') }}">Выйти</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="detail-head">
+    <h1>Счёт #{{ invoice.id }}</h1>
+    <form method="post" action="{{ url_for('invoice_status', id=invoice.id) }}" class="status-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select name="status" onchange="this.form.submit()">
+        {% for value, title in statuses %}
+        <option value="{{ value }}" {% if invoice.статус == value %}selected{% endif %}>{{ title }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <dl class="detail">
+    <dt>№ счёта</dt><dd><strong>{{ invoice.номер_счета or "—" }}</strong></dd>
+    {% for label, value in dates_display(invoice) %}
+    <dt>{{ label }}</dt><dd>{{ value }}</dd>
+    {% endfor %}
+    <dt>Контрагент</dt><dd>{{ invoice.контрагент or "—" }}</dd>
+    <dt>Товар/услуга</dt><dd>{{ (invoice.товар_услуга or "—") | items_list }}</dd>
+    <dt>Сумма</dt><dd>{{ invoice.сумма | money }} руб.</dd>
+    <dt>Назначение</dt><dd>{{ invoice.назначение or "—" }}</dd>
+    <dt>Примечание</dt><dd>{{ invoice.примечание or "—" }}</dd>
+    <dt>Отправитель</dt><dd>{{ invoice.отправитель or "—" }}</dd>
+    <dt>Email</dt><dd>{{ invoice.email or "—" }}</dd>
+    <dt>Телефон</dt><dd>{{ invoice.телефон or "—" }}</dd>
+    <dt>Файл</dt>
+    <dd>
+      {% if invoice.файл %}
+      <a href="{{ url_for('invoice_file', id=invoice.id) }}">{{ invoice.оригинал_файла or invoice.файл }}</a>
+      {% else %}—{% endif %}
+    </dd>
+  </dl>
+
+  <div class="detail-actions">
+    <a class="btn" href="{{ url_for('admin') }}">← Назад</a>
+    <form method="post" action="{{ url_for('invoice_delete', id=invoice.id) }}"
+          onsubmit="return confirm('Удалить счёт #{{ invoice.id }}?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-danger">Удалить счёт</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

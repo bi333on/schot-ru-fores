@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Счёт принят — {{ site_name }}{% endblock %}
+
+{% block content %}
+<div class="card success-card">
+  <div class="success-icon">✓</div>
+  <h1>Счёт принят</h1>
+  <p>Спасибо! Ваш счёт зарегистрирован и передан в обработку.</p>
+
+  <dl class="summary">
+    <dt>Регистрационный номер:</dt><dd>#{{ invoice.id }}</dd>
+    <dt>Контрагент:</dt><dd>{{ invoice.контрагент or "—" }}</dd>
+    <dt>Сумма:</dt><dd>{{ invoice.сумма | money }} руб.</dd>
+    <dt>Дата счёта:</dt><dd>{{ invoice.дата or "—" }}</dd>
+  </dl>
+
+  <a class="btn btn-primary" href="{{ url_for('index') }}">Загрузить ещё один счёт</a>
+</div>
+{% endblock %}

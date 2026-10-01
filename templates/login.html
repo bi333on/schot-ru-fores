@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Вход — {{ site_name }}{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('index') }}">← К форме приёма</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="card login-card">
+  <h1>Вход для сотрудников</h1>
+  <form method="post" class="login-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="username">Логин</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Пароль</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Войти</button>
+  </form>
+</div>
+{% endblock %}

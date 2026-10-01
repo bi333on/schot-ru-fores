@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Личный кабинет — {{ site_name }}{% endblock %}
+
+{% block brand %}{{ site_name }}{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('cabinet_add') }}" class="nav-btn">+ Добавить счёт</a>
+  <a href="{{ url_for('contragent_logout') }}">Выйти</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>Личный кабинет</h1>
+<p class="muted">Здравствуйте, {{ contragent.название or contragent.email }}!</p>
+
+<div class="stats">
+  <div class="stat"><span class="stat-label">Всего счетов</span><span class="stat-value">{{ pagination.total if pagination else 0 }}</span></div>
+  <div class="stat"><span class="stat-label">Всего на сумму</span><span class="stat-value">{{ total | money }} ₽</span></div>
+  <div class="stat"><span class="stat-label">Оплачено</span><span class="stat-value">{{ paid | money }} ₽</span></div>
+  <div class="stat stat-accent"><span class="stat-label">К оплате</span><span class="stat-value">{{ payable | money }} ₽</span></div>
+</div>
+
+<form method="get" class="filters">
+  <input type="search" name="q" placeholder="Поиск: № счёта, товар, примечание…" value="{{ q }}">
+  <select name="status">
+    <option value="">Все статусы</option>
+    {% for value, title in statuses %}
+    <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ title }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn">Найти</button>
+  {% if q or status %}<a class="btn btn-ghost" href="{{ url_for('cabinet') }}">Сбросить</a>{% endif %}
+</form>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="nowrap">#</th>
+        <th class="nowrap">№ счёта</th>
+        <th class="nowrap">Дата</th>
+        <th class="col-goods">Товар/услуга</th>
+        <th class="num nowrap">Сумма</th>
+        <th class="nowrap">Назначение</th>
+        <th class="nowrap">Статус</th>
+        <th class="nowrap">Файл</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr>
+        <td class="nowrap">{{ inv.id }}</td>
+        <td class="nowrap cell-num-invoice">{{ inv.номер_счета or "—" }}</td>
+        <td class="nowrap">{{ dates_cell(inv) }}</td>
+        <td class="col-goods">{{ (inv.товар_услуга or "—") | items_list }}</td>
+        <td class="num nowrap">{{ inv.сумма | money }}</td>
+        <td class="nowrap">{{ inv.назначение or "—" }}</td>
+        <td><span class="badge {{ status_badges.get(inv.статус, 'badge-new') }}">{{ inv.статус }}</span></td>
+        <td>
+          {% if inv.файл %}
+          <a href="{{ url_for('cabinet_file', id=inv.id) }}">скачать</a>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">У вас пока нет счетов.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% from "_pagination.html" import render %}
+{{ render(pagination, 'cabinet', q=q, status=status) }}
+
+<div class="card actions-card">
+  <a class="btn btn-primary" href="{{ url_for('cabinet_add') }}">+ Добавить счёт</a>
+</div>
+{% endblock %}

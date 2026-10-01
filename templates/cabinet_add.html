@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Добавить счёт — {{ site_name }}{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('cabinet') }}">← В кабинет</a>
+  <a href="{{ url_for('contragent_logout') }}">Выйти</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>Добавить счёт</h1>
+<p class="muted">Приложите файл счёта — данные будут распознаны автоматически.</p>
+
+<div class="card form-card">
+  <form method="post" enctype="multipart/form-data" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="hp-field" aria-hidden="true">
+      <label for="website">Website</label>
+      <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+
+    <div class="form-grid">
+      <div class="field field-wide">
+        <label for="file">Файл счёта (PDF / скан) *</label>
+        <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" required>
+        <small class="hint">PDF, JPG, PNG — данные (№, дата, контрагент, сумма) подставятся из файла автоматически.</small>
+      </div>
+
+      <div class="field">
+        <label for="назначение">Назначение (подразделение)</label>
+        <select id="назначение" name="назначение">
+          <option value="">— определяется из счёта —</option>
+          {% for value, title in subdivisions %}
+          <option value="{{ value }}" {% if form.get('назначение') == value %}selected{% endif %}>{{ title }}</option>
+          {% endfor %}
+        </select>
+        <small class="hint">Если не удалось определить автоматически — выберите вручную.</small>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Отправить счёт</button>
+  </form>
+</div>
+{% endblock %}
