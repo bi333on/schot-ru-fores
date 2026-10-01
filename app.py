@@ -308,55 +308,8 @@ def index():
 
 @app.route("/register", methods=["GET", "POST"])
 def contragent_register():
-    if current_contragent():
-        return redirect(url_for("cabinet"))
-
-    form = {}
-    if request.method == "POST":
-        email = norm(request.form.get("email", "")).lower()[:256]
-        password = request.form.get("password", "")
-        password2 = request.form.get("password2", "")
-        название = norm(request.form.get("название", ""))[:256]
-        контрагент = norm(request.form.get("контрагент", ""))[:256]
-        телефон = norm(request.form.get("телефон", ""))[:64]
-
-        form = {"email": email, "название": название, "контрагент": контрагент, "телефон": телефон}
-
-        # honeypot
-        if request.form.get("website", ""):
-            return redirect(url_for("contragent_login"))
-
-        errors = []
-        if not is_valid_email(email):
-            errors.append("Укажите корректный email.")
-        if len(password) < 8:
-            errors.append("Пароль должен быть не короче 8 символов.")
-        if password != password2:
-            errors.append("Пароли не совпадают.")
-        if not название:
-            errors.append("Укажите название организации.")
-        if Contragent.query.filter_by(email=email).first():
-            errors.append("Этот email уже зарегистрирован.")
-
-        if errors:
-            for e in errors:
-                flash(e, "error")
-            return render_template("register.html", form=form)
-
-        c = Contragent(
-            email=email,
-            password_hash=generate_password_hash(password),
-            название=название,
-            контрагент=контрагент or название,
-            телефон=телефон,
-        )
-        db.session.add(c)
-        db.session.commit()
-        session["contragent_id"] = c.id
-        flash("Регистрация завершена. Добро пожаловать!", "ok")
-        return redirect(url_for("cabinet"))
-
-    return render_template("register.html", form=form)
+    """Регистрация отключена: аккаунты контрагентов создаёт администратор."""
+    return redirect(url_for("contragent_login"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -373,6 +326,9 @@ def contragent_login():
 
         user = Contragent.query.filter_by(email=email).first()
         if user and check_password_hash(user.password_hash, password):
+            if not user.is_active:
+                flash("Доступ к аккаунту заблокирован администратором.", "error")
+                return render_template("login_contragent.html")
             session["contragent_id"] = user.id
             login_success("contragent_login")
             flash("Вы вошли в личный кабинет.", "ok")
@@ -716,6 +672,100 @@ def invoice_file(id):
     return send_from_directory(
         app.config["UPLOAD_FOLDER"], inv.файл, as_attachment=True, download_name=download_name
     )
+
+
+# ---------------------------------------------------------------------------
+# Управление контрагентами (пользователями) в админке
+# ---------------------------------------------------------------------------
+@app.route("/admin/users")
+@login_required
+def admin_users():
+    users = Contragent.query.order_by(Contragent.created_at.desc()).all()
+    return render_template("admin/users.html", users=users)
+
+
+@app.route("/admin/users/add", methods=["POST"])
+@login_required
+def admin_user_add():
+    email = norm(request.form.get("email", "")).lower()[:256]
+    password = request.form.get("password", "")
+    название = norm(request.form.get("название", ""))[:256]
+    контрагент = norm(request.form.get("контрагент", ""))[:256]
+    телефон = norm(request.form.get("телефон", ""))[:64]
+
+    errors = []
+    if not is_valid_email(email):
+        errors.append("Укажите корректный email.")
+    if len(password) < 8:
+        errors.append("Пароль должен быть не короче 8 символов.")
+    if not название:
+        errors.append("Укажите название организации.")
+    if Contragent.query.filter_by(email=email).first():
+        errors.append("Этот email уже зарегистрирован.")
+
+    if errors:
+        for e in errors:
+            flash(e, "error")
+    else:
+        c = Contragent(
+            email=email,
+            password_hash=generate_password_hash(password),
+            название=название,
+            контрагент=контрагент or название,
+            телефон=телефон,
+        )
+        db.session.add(c)
+        db.session.commit()
+        flash(f"Контрагент {email} создан.", "ok")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:id>/toggle", methods=["POST"])
+@login_required
+def admin_user_toggle(id):
+    user = db.session.get(Contragent, id)
+    if user is None:
+        abort(404)
+    user.is_active = not user.is_active
+    db.session.commit()
+    state = "разблокирован" if user.is_active else "заблокирован"
+    flash(f"Доступ пользователя {user.email} {state}.", "ok")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:id>/reset", methods=["POST"])
+@login_required
+def admin_user_reset(id):
+    user = db.session.get(Contragent, id)
+    if user is None:
+        abort(404)
+    password = request.form.get("password", "")
+    if len(password) < 8:
+        flash("Новый пароль должен быть не короче 8 символов.", "error")
+    else:
+        user.password_hash = generate_password_hash(password)
+        db.session.commit()
+        flash(f"Пароль пользователя {user.email} изменён.", "ok")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:id>/delete", methods=["POST"])
+@login_required
+def admin_user_delete(id):
+    user = db.session.get(Contragent, id)
+    if user is None:
+        abort(404)
+    if user.invoices.count() > 0:
+        flash(
+            f"Нельзя удалить: у пользователя {user.email} есть счета. "
+            "Сначала заблокируйте доступ.",
+            "error",
+        )
+        return redirect(url_for("admin_users"))
+    db.session.delete(user)
+    db.session.commit()
+    flash(f"Пользователь {user.email} удалён.", "ok")
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/export")

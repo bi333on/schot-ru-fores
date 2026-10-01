@@ -5,7 +5,6 @@
 {% block nav %}
 <nav class="header-nav">
   <a href="{{ url_for('index') }}">На главную</a>
-  <a href="{{ url_for('contragent_register') }}">Регистрация</a>
 </nav>
 {% endblock %}
 
@@ -24,6 +23,6 @@
     </div>
     <button type="submit" class="btn btn-primary">Войти</button>
   </form>
-  <p class="muted small">Нет аккаунта? <a href="{{ url_for('contragent_register') }}">Зарегистрироваться</a></p>
+  <p class="muted small">Доступ к кабинету предоставляет администратор.</p>
 </div>
 {% endblock %}

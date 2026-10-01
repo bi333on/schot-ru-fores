@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Контрагенты — {{ site_name }}{% endblock %}
+
+{% block brand %}{{ site_name }} · Админ{% endblock %}
+
+{% block nav %}
+<nav class="header-nav">
+  <a href="{{ url_for('admin') }}">Счета</a>
+  <a href="{{ url_for('admin_users') }}">Контрагенты</a>
+  <a href="{{ url_for('export') }}">Экспорт XLSX</a>
+  <a href="{{ url_for('logout') }}">Выйти</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>Контрагенты (пользователи)</h1>
+
+<div class="card form-card" style="margin-bottom: 20px;">
+  <h2>Добавить контрагента</h2>
+  <form method="post" action="{{ url_for('admin_user_add') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="название">Название организации *</label>
+      <input type="text" id="название" name="название" required>
+    </div>
+    <div class="field">
+      <label for="контрагент">Контрагент (из справочника)</label>
+      <input type="text" id="контрагент" name="контрагент" list="contragents-list">
+      <datalist id="contragents-list">
+        {% for c in contragents %}<option value="{{ c }}">{% endfor %}
+      </datalist>
+    </div>
+    <div class="field">
+      <label for="email">Email *</label>
+      <input type="email" id="email" name="email" required>
+    </div>
+    <div class="field">
+      <label for="телефон">Телефон</label>
+      <input type="text" id="телефон" name="телефон">
+    </div>
+    <div class="field">
+      <label for="password">Пароль * (мин. 8 символов)</label>
+      <input type="password" id="password" name="password" required>
+    </div>
+    <div class="field field-wide">
+      <button type="submit" class="btn btn-primary">Создать контрагента</button>
+    </div>
+  </form>
+</div>
+
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Название</th>
+        <th>Контрагент</th>
+        <th>Email</th>
+        <th>Телефон</th>
+        <th>Счетов</th>
+        <th>Статус</th>
+        <th>Действия</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td class="nowrap">{{ u.id }}</td>
+        <td class="nowrap">{{ u.название or "—" }}</td>
+        <td class="nowrap">{{ u.контрагент or "—" }}</td>
+        <td class="nowrap">{{ u.email }}</td>
+        <td class="nowrap">{{ u.телефон or "—" }}</td>
+        <td class="nowrap num">{{ u.invoices.count() }}</td>
+        <td class="nowrap">
+          {% if u.is_active %}
+          <span class="badge badge-paid">активен</span>
+          {% else %}
+          <span class="badge badge-excl">заблокирован</span>
+          {% endif %}
+        </td>
+        <td class="actions">
+          <form method="post" action="{{ url_for('admin_user_toggle', id=u.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if u.is_active %}
+            <button type="submit" class="btn btn-small">Заблокировать</button>
+            {% else %}
+            <button type="submit" class="btn btn-small">Разблокировать</button>
+            {% endif %}
+          </form>
+          <form method="post" action="{{ url_for('admin_user_reset', id=u.id) }}"
+                onsubmit="return confirm('Сменить пароль для {{ u.email }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="password" name="password" placeholder="Новый пароль" required
+                   style="width: 120px; padding: 4px 8px;">
+            <button type="submit" class="btn btn-small">Сменить пароль</button>
+          </form>
+          <form method="post" action="{{ url_for('admin_user_delete', id=u.id) }}"
+                onsubmit="return confirm('Удалить {{ u.email }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-small btn-danger">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">Контрагентов пока нет.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

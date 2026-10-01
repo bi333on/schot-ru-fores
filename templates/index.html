@@ -4,8 +4,7 @@
 
 {% block nav %}
 <nav class="header-nav">
-  <a href="{{ url_for('contragent_login') }}">Вход</a>
-  <a href="{{ url_for('contragent_register') }}" class="nav-btn">Регистрация</a>
+  <a href="{{ url_for('contragent_login') }}" class="nav-btn">Вход в кабинет</a>
 </nav>
 {% endblock %}
 
@@ -18,14 +17,13 @@
 <div class="card welcome-card">
   <h2>Как это работает</h2>
   <ol class="steps">
-    <li>Зарегистрируйтесь — укажите email, пароль и название организации.</li>
-    <li>Загрузите счёт — заполните данные и приложите PDF/скан.</li>
+    <li>Войдите в кабинет — логин и пароль выдаёт администратор.</li>
+    <li>Загрузите счёт — приложите PDF/скан, данные распознаются автоматически.</li>
     <li>Отслеживайте статус — в кабинете видно, когда счёт будет оплачен.</li>
   </ol>
 
   <div class="welcome-actions">
-    <a class="btn btn-primary" href="{{ url_for('contragent_register') }}">Зарегистрироваться</a>
-    <a class="btn" href="{{ url_for('contragent_login') }}">Войти в кабинет</a>
+    <a class="btn btn-primary" href="{{ url_for('contragent_login') }}">Войти в кабинет</a>
   </div>
 </div>
 {% endblock %}
