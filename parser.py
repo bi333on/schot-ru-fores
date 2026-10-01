@@ -366,13 +366,32 @@ def _extract_scan_images(pdf_path, out_dir):
     return saved
 
 
+def _ocr_image_text(img):
+    """OCR одного изображения в текст. Кросс-платформенно: winocr (Windows) / pytesseract (Linux)."""
+    # 1) Windows: winocr
+    try:
+        import winocr
+        r = winocr.recognize_pil_sync(img, "ru")
+        return "\n".join(ln["text"] for ln in r["lines"])
+    except Exception:
+        pass
+    # 2) Linux: pytesseract + установленный tesseract-ocr
+    try:
+        import pytesseract
+        return pytesseract.image_to_string(img, lang="rus")
+    except Exception as e:
+        raise RuntimeError(
+            "OCR недоступен. Установите tesseract-ocr (Linux: apt install tesseract-ocr tesseract-ocr-rus) "
+            "или winocr (Windows)."
+        ) from e
+
+
 def _parse_scan_pdf(path):
     """OCR скана: возвращает dict с разобранными полями."""
     try:
         from PIL import Image
-        import winocr
     except ImportError as e:
-        raise RuntimeError("Не установлен winocr или Pillow.") from e
+        raise RuntimeError("Не установлен Pillow.") from e
 
     scan_path = Path(path)
     tmp = scan_path.parent / "_scan_pages"
@@ -389,8 +408,7 @@ def _parse_scan_pdf(path):
     # распознаём первую страницу (основные данные счёта)
     jpg = sorted(images)[0]
     img = Image.open(jpg)
-    r = winocr.recognize_pil_sync(img, "ru")
-    text = "\n".join(ln["text"] for ln in r["lines"])
+    text = _ocr_image_text(img)
 
     num = ""
     m = re.search(r"Счет на оплату[^\d]{0,5}(\d{3,4})", text, re.I)
