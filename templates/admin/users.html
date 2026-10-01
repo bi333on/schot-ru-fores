@@ -59,6 +59,7 @@
         <th>Email</th>
         <th>Телефон</th>
         <th>Счетов</th>
+        <th>Онлайн</th>
         <th>Статус</th>
         <th>Действия</th>
       </tr>
@@ -72,6 +73,13 @@
         <td class="nowrap">{{ u.email }}</td>
         <td class="nowrap">{{ u.телефон or "—" }}</td>
         <td class="nowrap num">{{ u.invoices.count() }}</td>
+        <td class="nowrap">
+          {% if u.is_active and is_online(u) %}
+          <span class="badge badge-paid">● онлайн</span>
+          {% else %}
+          <span class="badge badge-excl">○ офлайн</span>
+          {% endif %}
+        </td>
         <td class="nowrap">
           {% if u.is_active %}
           <span class="badge badge-paid">активен</span>
@@ -103,7 +111,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" class="empty">Контрагентов пока нет.</td></tr>
+      <tr><td colspan="9" class="empty">Контрагентов пока нет.</td></tr>
       {% endfor %}
     </tbody>
   </table>

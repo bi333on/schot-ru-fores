@@ -10,7 +10,7 @@ import re
 import secrets
 import time
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -142,11 +142,12 @@ def login_required(f):
 
 
 def contragent_required(f):
-    """Доступ только для вошедшего контрагента."""
+    """Доступ только для вошедшего контрагента + отметка активности."""
     @wraps(f)
     def wrapper(*args, **kwargs):
         if not session.get("contragent_id"):
             return redirect(url_for("contragent_login", next=request.path))
+        _touch_last_seen()
         return f(*args, **kwargs)
     return wrapper
 
@@ -157,6 +158,22 @@ def current_contragent():
     if cid is None:
         return None
     return db.session.get(Contragent, cid)
+
+
+def _touch_last_seen():
+    """Обновляет last_seen контрагента (не чаще раза в 60 секунд)."""
+    cid = session.get("contragent_id")
+    if cid is None:
+        return
+    last = session.get("_last_seen_update", 0)
+    now = time.time()
+    if now - last < 60:
+        return
+    user = db.session.get(Contragent, cid)
+    if user is not None:
+        user.last_seen = datetime.now(timezone.utc)
+        db.session.commit()
+    session["_last_seen_update"] = now
 
 
 def is_valid_email(s):
@@ -242,6 +259,14 @@ def dates_cell(inv):
     return Markup(выставления)
 
 
+def is_online(user):
+    """Пользователь считается онлайн, если активен в последние 5 минут."""
+    if user is None or user.last_seen is None:
+        return False
+    delta = (datetime.now(timezone.utc) - user.last_seen).total_seconds()
+    return delta < 5 * 60
+
+
 # ---------------------------------------------------------------------------
 # Jinja
 # ---------------------------------------------------------------------------
@@ -258,6 +283,7 @@ def inject_globals():
         "current_contragent": current_contragent(),
         "dates_display": dates_display,
         "dates_cell": dates_cell,
+        "is_online": is_online,
     }
 
 

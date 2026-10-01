@@ -22,6 +22,7 @@ class Contragent(db.Model):
     контрагент = db.Column(db.String(256), default="")     # наименование из справочника (МТС и т.п.)
     телефон = db.Column(db.String(64), default="")
     is_active = db.Column(db.Boolean, default=True)        # False — доступ заблокирован админом
+    last_seen = db.Column(db.DateTime, nullable=True)      # последняя активность (UTC)
     created_at = db.Column(db.DateTime, default=utcnow)
 
     invoices = db.relationship("Invoice", backref="contragent_user", lazy="dynamic")
