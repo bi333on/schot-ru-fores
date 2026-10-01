@@ -18,7 +18,7 @@
     <h1>Счёт #{{ invoice.id }}</h1>
     <form method="post" action="{{ url_for('invoice_status', id=invoice.id) }}" class="status-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <select name="status" onchange="this.form.submit()">
+      <select name="status" class="js-auto-submit">
         {% for value, title in statuses %}
         <option value="{{ value }}" {% if invoice.статус == value %}selected{% endif %}>{{ title }}</option>
         {% endfor %}
@@ -50,7 +50,7 @@
   <div class="detail-actions">
     <a class="btn" href="{{ url_for('admin') }}">← Назад</a>
     <form method="post" action="{{ url_for('invoice_delete', id=invoice.id) }}"
-          onsubmit="return confirm('Удалить счёт #{{ invoice.id }}?');">
+          class="js-confirm" data-confirm="Удалить счёт #{{ invoice.id }}?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-danger">Удалить счёт</button>
     </form>

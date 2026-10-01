@@ -89,14 +89,14 @@
             {% endif %}
           </form>
           <form method="post" action="{{ url_for('admin_user_reset', id=u.id) }}"
-                onsubmit="return confirm('Сменить пароль для {{ u.email }}?');">
+                class="js-confirm" data-confirm="Сменить пароль для {{ u.email }}?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="password" name="password" placeholder="Новый пароль" required
                    style="width: 120px; padding: 4px 8px;">
             <button type="submit" class="btn btn-small">Сменить пароль</button>
           </form>
           <form method="post" action="{{ url_for('admin_user_delete', id=u.id) }}"
-                onsubmit="return confirm('Удалить {{ u.email }}?');">
+                class="js-confirm" data-confirm="Удалить {{ u.email }}?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-small btn-danger">Удалить</button>
           </form>
