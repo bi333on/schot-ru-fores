@@ -7,7 +7,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/schet
 EnvironmentFile=/opt/schet/.env
-ExecStart=/opt/schet/.venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 --timeout 120 app:app
+ExecStart=/opt/schet/.venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5000 --timeout 120 --no-control-socket app:app
 Restart=always
 RestartSec=5
 
