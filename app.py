@@ -8,11 +8,10 @@ import io
 import os
 import re
 import secrets
-import shutil
 import sys
-import tempfile
 import time
 import unicodedata
+import zipfile
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -22,11 +21,6 @@ from flask import (
     session, send_file, abort, send_from_directory,
 )
 from flask_wtf.csrf import CSRFProtect
-from pypdf import PdfWriter, PdfReader
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfgen import canvas
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -816,9 +810,9 @@ def admin_user_delete(id):
 @app.route("/admin/export")
 @login_required
 def export():
-    """Экспорт: объединение оригинальных PDF-файлов счетов в один файл."""
+    """Экспорт счетов: ZIP-архив с отдельными PDF, имя файла включает назначение."""
     invoices = Invoice.query.order_by(Invoice.created_at.asc()).all()
-    out_name, out_path = _merge_invoice_pdfs(invoices)
+    out_name, out_path = _export_invoices_zip(invoices)
     if out_path is None:
         flash("Нет файлов счетов для экспорта.", "error")
         return redirect(url_for("admin"))
@@ -826,152 +820,63 @@ def export():
 
 
 # ---------------------------------------------------------------------------
-# Экспорт в PDF: оригиналы счетов + страницы-разделители с «Назначение»
+# Экспорт счетов в ZIP (отдельные PDF с пометкой назначения в имени файла)
 # ---------------------------------------------------------------------------
-_CYR_FONT_CANDIDATES = [
-    (r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\arialbd.ttf"),
-    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    ("/usr/share/fonts/dejavu/DejaVuSans.ttf",
-     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
-]
-
-_registered_pdf_fonts = {}
-
-
-def _pdf_fonts():
+def _safe_name(value, fallback):
     """
-    Возвращает (regular, bold) имена зарегистрированных кириллических шрифтов.
-    Регистрирует TTF при первом вызове; fallback — Helvetica (без кириллицы).
+    Очищает строку для имени файла: убирает символы, недопустимые в путях
+    (`/ \\ : * ? " < > |` и управляющие). Кириллица сохраняется (ZIP пишет
+    имена в UTF-8). Пустое значение заменяется на fallback.
     """
-    if _registered_pdf_fonts:
-        return _registered_pdf_fonts["regular"], _registered_pdf_fonts["bold"]
-    for regular, bold in _CYR_FONT_CANDIDATES:
-        if os.path.exists(regular) and os.path.exists(bold):
-            pdfmetrics.registerFont(TTFont("Cyr", regular))
-            pdfmetrics.registerFont(TTFont("Cyr-Bold", bold))
-            _registered_pdf_fonts.update(regular="Cyr", bold="Cyr-Bold")
-            return "Cyr", "Cyr-Bold"
-    print(
-        "ВНИМАНИЕ: кириллический TTF-шрифт не найден — разделители будут без кириллицы.",
-        file=sys.stderr,
-    )
-    _registered_pdf_fonts.update(regular="Helvetica", bold="Helvetica-Bold")
-    return "Helvetica", "Helvetica-Bold"
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", value or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned or fallback
 
 
-def _make_divider_page(tmp_path, inv):
+def _export_invoices_zip(invoices):
     """
-    Создаёт PDF-страницу A4 с крупной пометкой подразделения счёта.
-    Возвращает путь к временному файлу страницы.
-    """
-    regular, bold = _pdf_fonts()
-    c = canvas.Canvas(tmp_path, pagesize=A4)
-    w, h = A4
-
-    назначение = (inv.назначение or "").strip() or "не указано"
-    номер = (inv.номер_счета or "").strip() or f"#{inv.id}"
-    контрагент = (inv.контрагент or "").strip()
-    дата = (inv.дата or "").strip()
-
-    c.setFont(bold, 22)
-    c.drawCentredString(w / 2, h - 120, "Счёт")
-
-    c.setFont(regular, 16)
-    c.drawCentredString(w / 2, h - 175, f"№ {номер}")
-    if дата:
-        c.drawCentredString(w / 2, h - 200, f"от {дата}")
-    if контрагент:
-        c.drawCentredString(w / 2, h - 225, контрагент)
-
-    # главная пометка: подразделение (назначение)
-    c.setFont(bold, 26)
-    c.drawCentredString(w / 2, h - 330, "Назначение:")
-
-    c.setFont(regular, 24)
-    # перенос длинного названия по строкам, чтобы не вылезло за поля
-    lines = _wrap_text(назначение, 34)
-    y = h - 370
-    for line in lines:
-        c.drawCentredString(w / 2, y, line)
-        y -= 34
-
-    c.setFont(regular, 11)
-    c.setFillGray(0.45)
-    c.drawCentredString(w / 2, 60, "Оригинал счёта — на следующей странице")
-    c.setFillGray(0)
-
-    c.showPage()
-    c.save()
-    return tmp_path
-
-
-def _wrap_text(text, max_chars):
-    """Грубый перенос строки по словам (для длинных названий подразделений)."""
-    words = text.split()
-    if not words:
-        return [text]
-    lines, current = [], ""
-    for word in words:
-        candidate = word if not current else current + " " + word
-        if len(candidate) <= max_chars:
-            current = candidate
-        else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    return lines
-
-
-def _merge_invoice_pdfs(invoices):
-    """
-    Склеивает оригинальные PDF-файлы счетов в один документ. Перед каждым
-    счётом вставляет страницу-разделитель с пометкой «Назначение: …».
+    Создаёт ZIP-архив, где каждый счёт — отдельный PDF-файл с именем вида
+    «Назначение_Счёт Номер.pdf» (назначение подразделения в начале имени).
     Порядок — по дате загрузки. Счета без файла пропускаются.
-    Возвращает (имя_файла, путь) либо (None, None), если ни одного PDF нет.
+    Возвращает (имя_архива, путь) либо (None, None), если ни одного файла нет.
     """
-    writer = PdfWriter()
-    merged = 0
-    tmp_dir = tempfile.mkdtemp(prefix="schet_div_")
-    try:
-        for idx, inv in enumerate(invoices):
+    if not invoices:
+        return None, None
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_name = f"Счета_{stamp}.zip"
+    out_path = os.path.join(app.config["EXPORT_FOLDER"], out_name)
+
+    added = 0
+    used_names = set()
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for inv in invoices:
             if not inv.файл:
                 continue
             fp = os.path.join(app.config["UPLOAD_FOLDER"], inv.файл)
             if not os.path.exists(fp):
                 continue
-            try:
-                reader = PdfReader(fp)
-            except Exception as e:
-                print(f"Пропущен файл счёта #{inv.id} ({inv.файл}): {e}", file=sys.stderr)
-                continue
 
-            # страница-разделитель
-            divider_path = os.path.join(tmp_dir, f"div_{idx}.pdf")
-            try:
-                _make_divider_page(divider_path, inv)
-                d_reader = PdfReader(divider_path)
-                for page in d_reader.pages:
-                    writer.add_page(page)
-            except Exception as e:
-                print(f"Разделитель счёта #{inv.id} не создан: {e}", file=sys.stderr)
+            назначение = _safe_name(inv.назначение, "Без-назначения")
+            номер = _safe_name(inv.номер_счета, f"Счет-{inv.id}")
 
-            for page in reader.pages:
-                writer.add_page(page)
-            merged += 1
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+            base = f"{назначение}_Счёт {номер}"
+            entry = f"{base}.pdf"
+            # разрешаем конфликты одинаковых имён, добавляя суффикс
+            if entry in used_names:
+                i = 2
+                while f"{base}_{i}.pdf" in used_names:
+                    i += 1
+                entry = f"{base}_{i}.pdf"
+            used_names.add(entry)
 
-    if merged == 0:
+            zf.write(fp, arcname=entry)
+            added += 1
+
+    if added == 0:
+        os.remove(out_path)
         return None, None
 
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_name = f"Счета_{stamp}.pdf"
-    out_path = os.path.join(app.config["EXPORT_FOLDER"], out_name)
-    with open(out_path, "wb") as f:
-        writer.write(f)
     return out_name, out_path
 
 
