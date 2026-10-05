@@ -8,7 +8,9 @@ import io
 import os
 import re
 import secrets
+import shutil
 import sys
+import tempfile
 import time
 import unicodedata
 from datetime import datetime, timezone
@@ -21,6 +23,10 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from pypdf import PdfWriter, PdfReader
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -820,30 +826,143 @@ def export():
 
 
 # ---------------------------------------------------------------------------
-# Экспорт в PDF (объединение оригиналов через pypdf)
+# Экспорт в PDF: оригиналы счетов + страницы-разделители с «Назначение»
 # ---------------------------------------------------------------------------
+_CYR_FONT_CANDIDATES = [
+    (r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\arialbd.ttf"),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ("/usr/share/fonts/dejavu/DejaVuSans.ttf",
+     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
+]
+
+_registered_pdf_fonts = {}
+
+
+def _pdf_fonts():
+    """
+    Возвращает (regular, bold) имена зарегистрированных кириллических шрифтов.
+    Регистрирует TTF при первом вызове; fallback — Helvetica (без кириллицы).
+    """
+    if _registered_pdf_fonts:
+        return _registered_pdf_fonts["regular"], _registered_pdf_fonts["bold"]
+    for regular, bold in _CYR_FONT_CANDIDATES:
+        if os.path.exists(regular) and os.path.exists(bold):
+            pdfmetrics.registerFont(TTFont("Cyr", regular))
+            pdfmetrics.registerFont(TTFont("Cyr-Bold", bold))
+            _registered_pdf_fonts.update(regular="Cyr", bold="Cyr-Bold")
+            return "Cyr", "Cyr-Bold"
+    print(
+        "ВНИМАНИЕ: кириллический TTF-шрифт не найден — разделители будут без кириллицы.",
+        file=sys.stderr,
+    )
+    _registered_pdf_fonts.update(regular="Helvetica", bold="Helvetica-Bold")
+    return "Helvetica", "Helvetica-Bold"
+
+
+def _make_divider_page(tmp_path, inv):
+    """
+    Создаёт PDF-страницу A4 с крупной пометкой подразделения счёта.
+    Возвращает путь к временному файлу страницы.
+    """
+    regular, bold = _pdf_fonts()
+    c = canvas.Canvas(tmp_path, pagesize=A4)
+    w, h = A4
+
+    назначение = (inv.назначение or "").strip() or "не указано"
+    номер = (inv.номер_счета or "").strip() or f"#{inv.id}"
+    контрагент = (inv.контрагент or "").strip()
+    дата = (inv.дата or "").strip()
+
+    c.setFont(bold, 22)
+    c.drawCentredString(w / 2, h - 120, "Счёт")
+
+    c.setFont(regular, 16)
+    c.drawCentredString(w / 2, h - 175, f"№ {номер}")
+    if дата:
+        c.drawCentredString(w / 2, h - 200, f"от {дата}")
+    if контрагент:
+        c.drawCentredString(w / 2, h - 225, контрагент)
+
+    # главная пометка: подразделение (назначение)
+    c.setFont(bold, 26)
+    c.drawCentredString(w / 2, h - 330, "Назначение:")
+
+    c.setFont(regular, 24)
+    # перенос длинного названия по строкам, чтобы не вылезло за поля
+    lines = _wrap_text(назначение, 34)
+    y = h - 370
+    for line in lines:
+        c.drawCentredString(w / 2, y, line)
+        y -= 34
+
+    c.setFont(regular, 11)
+    c.setFillGray(0.45)
+    c.drawCentredString(w / 2, 60, "Оригинал счёта — на следующей странице")
+    c.setFillGray(0)
+
+    c.showPage()
+    c.save()
+    return tmp_path
+
+
+def _wrap_text(text, max_chars):
+    """Грубый перенос строки по словам (для длинных названий подразделений)."""
+    words = text.split()
+    if not words:
+        return [text]
+    lines, current = [], ""
+    for word in words:
+        candidate = word if not current else current + " " + word
+        if len(candidate) <= max_chars:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
 def _merge_invoice_pdfs(invoices):
     """
-    Склеивает оригинальные PDF-файлы счетов в один документ (без разделителей)
-    в порядке даты загрузки. Счета без файла пропускаются.
+    Склеивает оригинальные PDF-файлы счетов в один документ. Перед каждым
+    счётом вставляет страницу-разделитель с пометкой «Назначение: …».
+    Порядок — по дате загрузки. Счета без файла пропускаются.
     Возвращает (имя_файла, путь) либо (None, None), если ни одного PDF нет.
     """
     writer = PdfWriter()
     merged = 0
-    for inv in invoices:
-        if not inv.файл:
-            continue
-        fp = os.path.join(app.config["UPLOAD_FOLDER"], inv.файл)
-        if not os.path.exists(fp):
-            continue
-        try:
-            reader = PdfReader(fp)
+    tmp_dir = tempfile.mkdtemp(prefix="schet_div_")
+    try:
+        for idx, inv in enumerate(invoices):
+            if not inv.файл:
+                continue
+            fp = os.path.join(app.config["UPLOAD_FOLDER"], inv.файл)
+            if not os.path.exists(fp):
+                continue
+            try:
+                reader = PdfReader(fp)
+            except Exception as e:
+                print(f"Пропущен файл счёта #{inv.id} ({inv.файл}): {e}", file=sys.stderr)
+                continue
+
+            # страница-разделитель
+            divider_path = os.path.join(tmp_dir, f"div_{idx}.pdf")
+            try:
+                _make_divider_page(divider_path, inv)
+                d_reader = PdfReader(divider_path)
+                for page in d_reader.pages:
+                    writer.add_page(page)
+            except Exception as e:
+                print(f"Разделитель счёта #{inv.id} не создан: {e}", file=sys.stderr)
+
             for page in reader.pages:
                 writer.add_page(page)
             merged += 1
-        except Exception as e:
-            # повреждённый/не-PDF файл не должен ломать весь экспорт
-            print(f"Пропущен файл счёта #{inv.id} ({inv.файл}): {e}", file=sys.stderr)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if merged == 0:
         return None, None
