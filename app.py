@@ -20,8 +20,13 @@ from flask import (
     session, send_file, abort, send_from_directory,
 )
 from flask_wtf.csrf import CSRFProtect
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import ParagraphStyle
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -811,61 +816,129 @@ def admin_user_delete(id):
 @app.route("/admin/export")
 @login_required
 def export():
-    """Экспорт счетов в XLSX (совместимо с Реестром платежей)."""
+    """Экспорт всех счетов одним PDF-файлом (реестр, совместим с Реестром платежей)."""
     invoices = Invoice.query.order_by(Invoice.created_at.asc()).all()
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Счета"
+    out_name, out_path = _export_invoices_pdf(invoices)
+    return send_file(out_path, as_attachment=True, download_name=out_name)
+
+
+# ---------------------------------------------------------------------------
+# Экспорт в PDF (reportlab)
+# ---------------------------------------------------------------------------
+_CYR_FONT_CANDIDATES = [
+    # Windows (локальная разработка)
+    r"C:\Windows\Fonts\arial.ttf",
+    r"C:\Windows\Fonts\arialbd.ttf",
+    # Ubuntu / VPS
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+]
+
+
+def _register_pdf_fonts():
+    """
+    Регистрирует кириллический TTF-шрифт для отчёта.
+    Возвращает (regular_name, bold_name); при отсутствии TTF — встроенный
+    Helvetica (без кириллицы) и предупреждение в stderr.
+    """
+    for regular, bold in (
+        (r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\arialbd.ttf"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ("/usr/share/fonts/dejavu/DejaVuSans.ttf",
+         "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
+    ):
+        if os.path.exists(regular) and os.path.exists(bold):
+            pdfmetrics.registerFont(TTFont("Cyr", regular))
+            pdfmetrics.registerFont(TTFont("Cyr-Bold", bold))
+            return "Cyr", "Cyr-Bold"
+    print(
+        "ВНИМАНИЕ: кириллический TTF-шрифт не найден — PDF-экспорт будет без кириллицы.",
+        file=sys.stderr,
+    )
+    return "Helvetica", "Helvetica-Bold"
+
+
+def _fmt_money(v):
+    """Сумма в виде '12 345,67' (для ячейки таблицы)."""
+    if v is None:
+        return ""
+    return f"{v:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def _export_invoices_pdf(invoices):
+    """Генерирует PDF-реестр счетов и возвращает (имя_файла, путь)."""
+    regular, bold = _register_pdf_fonts()
+
+    title_style = ParagraphStyle("title", fontName=bold, fontSize=14, leading=18)
+    head_style = ParagraphStyle(
+        "head", fontName=bold, fontSize=8, leading=10, textColor=colors.white
+    )
+    cell_style = ParagraphStyle("cell", fontName=regular, fontSize=8, leading=10)
 
     headers = ["№ счета", "Дата выставления", "Контрагент", "Товар/услуга",
-               "Сумма", "Примечание", "Назначение", "Файл", "Статус", "Отправитель", "Email", "Телефон", "Дата загрузки"]
+               "Сумма", "Примечание", "Назначение", "Файл", "Статус",
+               "Отправитель", "Email", "Телефон", "Дата загрузки"]
 
-    thin = Side(style="thin", color="B0B0B0")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    header_fill = PatternFill("solid", fgColor="1F4E78")
-    header_font = Font(bold=True, color="FFFFFF")
-
-    for col, h in enumerate(headers, 1):
-        c = ws.cell(row=1, column=col, value=h)
-        c.fill = header_fill
-        c.font = header_font
-        c.alignment = Alignment(horizontal="center", vertical="center")
-        c.border = border
-
-    for r, inv in enumerate(invoices, 2):
-        values = [
-            inv.номер_счета,
-            inv.дата,
-            inv.контрагент,
-            inv.товар_услуга,
-            inv.сумма,
-            inv.примечание,
-            inv.назначение,
-            inv.оригинал_файла or inv.файл,
-            inv.статус,
-            inv.отправитель,
-            inv.email,
-            inv.телефон,
+    data = [[Paragraph(h, head_style) for h in headers]]
+    for inv in invoices:
+        сумма = _fmt_money(inv.сумма)
+        row = [
+            inv.номер_счета or "",
+            inv.дата or "",
+            inv.контрагент or "",
+            inv.товар_услуга or "",
+            сумма,
+            inv.примечание or "",
+            inv.назначение or "",
+            inv.оригинал_файла or inv.файл or "",
+            inv.статус or "",
+            inv.отправитель or "",
+            inv.email or "",
+            inv.телефон or "",
             inv.created_at.strftime("%d.%m.%Y %H:%M") if inv.created_at else "",
         ]
-        for col, v in enumerate(values, 1):
-            c = ws.cell(row=r, column=col, value=v)
-            c.border = border
-            if col == 5 and isinstance(v, (int, float)):
-                c.number_format = '#,##0.00'
-                c.alignment = Alignment(horizontal="right")
+        data.append([Paragraph(str(v), cell_style) for v in row])
 
-    widths = [18, 12, 22, 28, 12, 28, 18, 28, 14, 22, 22, 14, 16]
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
-    ws.freeze_panes = "A2"
+    # ширина колонок в мм (альбомная A4 = 297 мм, поля по 10 мм)
+    widths = [24, 22, 26, 34, 20, 30, 24, 30, 16, 26, 26, 18, 21]
+    table = Table(data, colWidths=[w * mm for w in widths], repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E78")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), bold),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (4, 1), (4, -1), "RIGHT"),   # Сумма — вправо
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#B0B0B0")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F2F6FB")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+    ]))
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_name = f"Счета_{stamp}.xlsx"
+    out_name = f"Счета_{stamp}.pdf"
     out_path = os.path.join(app.config["EXPORT_FOLDER"], out_name)
-    wb.save(out_path)
 
-    return send_file(out_path, as_attachment=True, download_name=out_name)
+    doc = SimpleDocTemplate(
+        out_path,
+        pagesize=landscape(A4),
+        leftMargin=10 * mm,
+        rightMargin=10 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title=f"Реестр счетов — {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+    )
+    story = [
+        Paragraph(f"Реестр счетов — {datetime.now().strftime('%d.%m.%Y %H:%M')}", title_style),
+        Spacer(1, 4 * mm),
+        table,
+    ]
+    doc.build(story)
+    return out_name, out_path
 
 
 # ---------------------------------------------------------------------------
